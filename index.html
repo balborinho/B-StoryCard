@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>B-StoryCards</title>
+<style>
+:root{
+  --bg:#f1f3f5; --panel:#fff; --text:#202124; --muted:#6b7280;
+  --line:#d9dde3; --accent:#202124; --card:#fff8dc;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+header{
+  height:62px;background:#181818;color:white;display:flex;align-items:center;
+  padding:0 18px;gap:14px;position:sticky;top:0;z-index:20
+}
+.logo{height:34px;width:34px;object-fit:contain}
+.brand{font-size:20px;font-weight:700;letter-spacing:.2px}
+.subtitle{font-size:13px;color:#aaa;margin-left:4px}
+.spacer{flex:1}
+button,.file-label{
+  border:1px solid #cfd4da;background:white;color:#222;border-radius:6px;
+  padding:8px 11px;font-size:13px;cursor:pointer
+}
+button:hover,.file-label:hover{background:#f0f1f2}
+header button,.header-file{background:#2b2b2b;border-color:#555;color:#fff}
+.header-file input{display:none}
+main{padding:18px;max-width:1800px;margin:auto}
+.toolbar{
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px
+}
+.toolbar input,.toolbar select{
+  border:1px solid var(--line);border-radius:6px;padding:9px 10px;background:white
+}
+#storyTitle{font-size:15px;font-weight:600;min-width:250px}
+#search{min-width:220px}
+.board{
+  display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:18px;
+  min-height:calc(100vh - 150px)
+}
+.column{
+  flex:0 0 285px;background:#e3e6ea;border:1px solid #d2d6db;border-radius:8px;
+  min-height:300px;padding:10px
+}
+.column-head{display:flex;align-items:center;gap:6px;margin-bottom:9px}
+.column-title{font-weight:700;flex:1}
+.count{font-size:11px;color:var(--muted)}
+.cards{min-height:50px}
+.story-card{
+  background:var(--card);border:1px solid #d8c98a;border-radius:7px;padding:11px;
+  margin-bottom:9px;box-shadow:0 1px 2px #0001;cursor:grab
+}
+.story-card.dragging{opacity:.45}
+.card-top{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.card-number{font-size:11px;color:#777;font-weight:700}
+.card-title{font-weight:700;flex:1;line-height:1.25}
+.card-actions{display:flex;gap:3px}
+.icon-btn{padding:3px 6px;font-size:12px;border:0;background:transparent;color:#666}
+.icon-btn:hover{background:#0001}
+.card-body{font-size:13px;line-height:1.45;white-space:pre-wrap}
+.card-meta{margin-top:8px;font-size:11px;color:#777}
+.add-card{
+  width:100%;border:1px dashed #adb3ba;background:transparent;color:#666;
+  margin-top:2px
+}
+.add-column{min-width:170px;height:42px}
+.empty{color:#888;font-size:12px;text-align:center;padding:18px 5px}
+.modal-backdrop{
+  position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;
+  z-index:50
+}
+.modal{
+  background:white;border-radius:9px;width:min(650px,calc(100vw - 30px));padding:18px;
+  box-shadow:0 12px 50px #0005
+}
+.modal h2{margin:0 0 15px;font-size:19px}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;font-weight:700;margin-bottom:5px}
+.form-row input,.form-row textarea,.form-row select{
+  width:100%;padding:9px;border:1px solid var(--line);border-radius:6px;font:inherit
+}
+.form-row textarea{min-height:130px;resize:vertical}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}
+.primary{background:#202124;color:white;border-color:#202124}
+.danger{color:#a00}
+.drop-target{outline:2px dashed #777;outline-offset:-4px}
+footer{font-size:11px;color:#777;text-align:center;padding:12px} footer a{color:inherit;text-decoration:none} footer a:hover{text-decoration:underline}
+@media(max-width:700px){
+  .subtitle{display:none}.column{flex-basis:270px}#search{min-width:150px}
+}
+</style>
+</head>
+<body>
+<header>
+  <img class="logo" src="logo-bbr.svg" alt="Balborinho" onerror="this.style.display='none'">
+  <div class="brand">B-StoryCards</div>
+  <div class="subtitle">Story sequence organiser</div>
+  <div class="spacer"></div>
+  <button onclick="newStory()">New</button>
+  <button onclick="exportCSV()">Export CSV</button>
+  <label class="file-label header-file">Import CSV<input type="file" id="csvInput" accept=".csv,text/csv"></label>
+</header>
+
+<main>
+  <div class="toolbar">
+    <input id="storyTitle" value="Untitled Story" placeholder="Story title" onchange="state.title=this.value;save()">
+    <input id="search" placeholder="Search cards..." oninput="render()">
+    <button onclick="addCard()">＋ Card</button>
+    <button onclick="addColumn()">＋ Column</button>
+    <button onclick="clearBoard()">Clear Cards</button>
+  </div>
+  <div id="board" class="board"></div>
+  <footer><a href="https://balborinho.com" target="_blank" rel="noopener">Balborinho</a> | 2026</footer>
+</main>
+
+<div id="modalBackdrop" class="modal-backdrop">
+  <div class="modal">
+    <h2 id="modalTitle">Story Card</h2>
+    <div class="form-row">
+      <label>Title</label>
+      <input id="cardTitle" placeholder="Card title">
+    </div>
+    <div class="form-row">
+      <label>Story / Action</label>
+      <textarea id="cardBody" placeholder="What happens in this card?"></textarea>
+    </div>
+    <div class="form-row">
+      <label>Notes</label>
+      <input id="cardNotes" placeholder="Optional notes, visual ideas, dialogue, etc.">
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal()">Cancel</button>
+      <button class="primary" onclick="saveCard()">Save Card</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY='b-storycards-v1';
+let state={title:'Untitled Story',columns:[
+  {id:uid(),name:'Sequence 1',cards:[]},
+  {id:uid(),name:'Sequence 2',cards:[]},
+  {id:uid(),name:'Sequence 3',cards:[]}
+]};
+let editing={columnId:null,cardId:null};
+
+function uid(){return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8)}
+function save(){localStorage.setItem(KEY,JSON.stringify(state))}
+function load(){
+  try{
+    const x=JSON.parse(localStorage.getItem(KEY));
+    if(x&&x.columns) state=x;
+  }catch(e){}
+  document.getElementById('storyTitle').value=state.title||'Untitled Story';
+}
+function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function render(){
+  const board=document.getElementById('board'), q=document.getElementById('search').value.toLowerCase();
+  board.innerHTML='';
+  state.columns.forEach((col,ci)=>{
+    const wrap=document.createElement('section'); wrap.className='column'; wrap.dataset.column=col.id;
+    const filtered=col.cards.filter(c=>(c.title+' '+c.body+' '+(c.notes||'')).toLowerCase().includes(q));
+    wrap.innerHTML=`<div class="column-head">
+      <input class="column-title" value="${esc(col.name)}" onchange="renameColumn('${col.id}',this.value)">
+      <span class="count">${col.cards.length}</span>
+      <button class="icon-btn" title="Delete column" onclick="deleteColumn('${col.id}')">✕</button>
+    </div>
+    <div class="cards"></div>
+    <button class="add-card" onclick="addCard('${col.id}')">＋ Add card</button>`;
+    const cardsEl=wrap.querySelector('.cards');
+    cardsEl.addEventListener('dragover',e=>{e.preventDefault();wrap.classList.add('drop-target')});
+    cardsEl.addEventListener('dragleave',()=>wrap.classList.remove('drop-target'));
+    cardsEl.addEventListener('drop',e=>dropCard(e,col.id));
+    filtered.forEach((card,idx)=>{
+      const el=document.createElement('article'); el.className='story-card';el.draggable=true;el.dataset.card=card.id;
+      const globalIndex=state.columns.flatMap(c=>c.cards).findIndex(c=>c.id===card.id)+1;
+      el.innerHTML=`<div class="card-top">
+        <span class="card-number">#${globalIndex}</span>
+        <span class="card-title">${esc(card.title||'Untitled')}</span>
+        <span class="card-actions">
+          <button class="icon-btn" title="Edit" onclick="editCard('${col.id}','${card.id}')">✎</button>
+          <button class="icon-btn" title="Delete" onclick="deleteCard('${col.id}','${card.id}')">✕</button>
+        </span>
+      </div>
+      <div class="card-body">${esc(card.body||'')}</div>
+      ${card.notes?`<div class="card-meta">Notes: ${esc(card.notes)}</div>`:''}`;
+      el.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',JSON.stringify({cardId:card.id,from:col.id}));el.classList.add('dragging')});
+      el.addEventListener('dragend',()=>el.classList.remove('dragging'));
+      cardsEl.appendChild(el);
+    });
+    if(!filtered.length) cardsEl.innerHTML='<div class="empty">No cards</div>';
+    board.appendChild(wrap);
+  });
+  const add=document.createElement('button');add.className='add-column';add.textContent='＋ Add column';add.onclick=addColumn;board.appendChild(add);
+  save();
+}
+function renameColumn(id,name){const c=state.columns.find(x=>x.id===id);if(c)c.name=name.trim()||'Untitled';save()}
+function addColumn(){
+  const name=prompt('Column name:','Sequence '+(state.columns.length+1));
+  if(name===null)return; state.columns.push({id:uid(),name:name.trim()||'Untitled',cards:[]});render()
+}
+function deleteColumn(id){
+  const c=state.columns.find(x=>x.id===id);if(!c)return;
+  if(c.cards.length&&!confirm('Delete this column and all its cards?'))return;
+  state.columns=state.columns.filter(x=>x.id!==id); if(!state.columns.length)state.columns.push({id:uid(),name:'Sequence 1',cards:[]});render()
+}
+function addCard(columnId){
+  if(!columnId) columnId=state.columns[0]?.id;
+  if(!columnId){addColumn();columnId=state.columns[0].id}
+  editing={columnId,cardId:null};
+  document.getElementById('modalTitle').textContent='New Story Card';
+  document.getElementById('cardTitle').value='';
+  document.getElementById('cardBody').value='';
+  document.getElementById('cardNotes').value='';
+  document.getElementById('modalBackdrop').style.display='flex';
+  setTimeout(()=>document.getElementById('cardTitle').focus(),30);
+}
+function editCard(columnId,cardId){
+  const c=state.columns.find(x=>x.id===columnId), card=c.cards.find(x=>x.id===cardId);if(!card)return;
+  editing={columnId,cardId};
+  document.getElementById('modalTitle').textContent='Edit Story Card';
+  document.getElementById('cardTitle').value=card.title||'';
+  document.getElementById('cardBody').value=card.body||'';
+  document.getElementById('cardNotes').value=card.notes||'';
+  document.getElementById('modalBackdrop').style.display='flex';
+}
+function closeModal(){document.getElementById('modalBackdrop').style.display='none'}
+function saveCard(){
+  const col=state.columns.find(x=>x.id===editing.columnId);if(!col)return;
+  const data={title:document.getElementById('cardTitle').value.trim(),body:document.getElementById('cardBody').value.trim(),notes:document.getElementById('cardNotes').value.trim()};
+  if(editing.cardId){Object.assign(col.cards.find(x=>x.id===editing.cardId),data)}
+  else col.cards.push({id:uid(),...data});
+  closeModal();render()
+}
+function deleteCard(colId,cardId){
+  const c=state.columns.find(x=>x.id===colId);if(!c)return;
+  if(confirm('Delete this card?')){c.cards=c.cards.filter(x=>x.id!==cardId);render()}
+}
+function dropCard(e,toId){
+  e.preventDefault();document.querySelectorAll('.column').forEach(x=>x.classList.remove('drop-target'));
+  let d;try{d=JSON.parse(e.dataTransfer.getData('text/plain'))}catch(_){return}
+  const from=state.columns.find(x=>x.id===d.from),to=state.columns.find(x=>x.id===toId);if(!from||!to)return;
+  const i=from.cards.findIndex(x=>x.id===d.cardId);if(i<0)return;
+  const [card]=from.cards.splice(i,1);to.cards.push(card);render()
+}
+function clearBoard(){
+  if(confirm('Remove all story cards from the board?')){state.columns.forEach(c=>c.cards=[]);render()}
+}
+function newStory(){
+  if(!confirm('Start a new story? Current board will be replaced.'))return;
+  state={title:'Untitled Story',columns:[{id:uid(),name:'Sequence 1',cards:[]},{id:uid(),name:'Sequence 2',cards:[]},{id:uid(),name:'Sequence 3',cards:[]}]};
+  load();render()
+}
+function csvEscape(v){v=String(v??'');return '"'+v.replace(/"/g,'""')+'"'}
+function exportCSV(){
+  // One row = one story card. The column/sequence information is repeated
+  // on each row so the CSV remains readable and useful in spreadsheet apps.
+  const rows=[['Card ID','Story','Sequence','Sequence Order','Card Order','Title','Story / Action','Notes']];
+  state.columns.forEach((col,ci)=>col.cards.forEach((card,oi)=>rows.push([card.id,state.title,col.name,ci+1,oi+1,card.title,card.body,card.notes||''])));
+  const csv='\\ufeff'+rows.map(r=>r.map(csvEscape).join(',')).join('\\r\\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.title||'story').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'story';a.download+='.csv';a.click();URL.revokeObjectURL(a.href)
+}
+function parseCSV(text){
+  const rows=[];let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i],nx=text[i+1];
+    if(q){if(ch==='"'&&nx==='"'){cell+='"';i++}else if(ch==='"')q=false;else cell+=ch}
+    else{if(ch==='"')q=true;else if(ch===','){row.push(cell);cell=''}else if(ch==='\\n'){row.push(cell);rows.push(row);row=[];cell=''}else if(ch!=='\\r')cell+=ch}
+  }
+  if(cell!==''||row.length){row.push(cell);rows.push(row)} return rows
+}
+document.getElementById('csvInput').addEventListener('change',e=>{
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const rows=parseCSV(reader.result.replace(/^\\ufeff/,''));
+      if(!rows.length)throw new Error('Empty CSV');
+      const header=rows[0].map(x=>x.trim().toLowerCase());
+      const ix=n=>header.indexOf(n);
+      const storyIx=ix('story'), colIx=ix('column'), colOrderIx=ix('column order'), cardOrderIx=ix('card order');
+      const titleIx=ix('title'), bodyIx=ix('story / action'), notesIx=ix('notes'), idIx=ix('card id');
+      if(colIx<0||titleIx<0)throw new Error('Missing required columns: Column and Title');
+      const title=storyIx>=0&&rows[1]?.[storyIx]?rows[1][storyIx]:'Imported Story';
+      const map=new Map();
+      rows.slice(1).filter(r=>r.some(x=>x!=='')).forEach(r=>{
+        const name=r[colIx]||'Untitled';
+        if(!map.has(name))map.set(name,{id:uid(),name,cards:[]});
+        map.get(name).cards.push({
+          id:(idIx>=0&&r[idIx])||uid(),
+          title:r[titleIx]||'',
+          body:bodyIx>=0?r[bodyIx]||'':'',
+          notes:notesIx>=0?r[notesIx]||'':''
+        })
+      });
+      state={title,columns:[...map.values()]};
+      if(!state.columns.length)state.columns=[{id:uid(),name:'Sequence 1',cards:[]}];
+      load();render();alert('CSV imported successfully.')
+    }catch(err){alert('Could not import CSV: '+err.message)}
+  };reader.readAsText(file);e.target.value=''
+});
+document.getElementById('modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if(e.ctrlKey&&e.key==='Enter'&&document.getElementById('modalBackdrop').style.display==='flex')saveCard()});
+load();render();
+</script>
+</body>
+</html>
