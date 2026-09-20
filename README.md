@@ -1,1 +1,3 @@
-# B-StoryCard
+# B-StoryCards
+
+Balborinho Story sequence organiser 
