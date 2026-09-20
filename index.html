@@ -255,51 +255,101 @@ function newStory(){
 }
 function csvEscape(v){v=String(v??'');return '"'+v.replace(/"/g,'""')+'"'}
 function exportCSV(){
-  // One row = one story card. The column/sequence information is repeated
-  // on each row so the CSV remains readable and useful in spreadsheet apps.
+  // One row = one story card. Use semicolons as separators because this
+  // is the usual CSV delimiter for Portuguese/European spreadsheet locales.
+  // UTF-8 BOM lets LibreOffice/Excel detect the encoding correctly.
   const rows=[['Card ID','Story','Sequence','Sequence Order','Card Order','Title','Story / Action','Notes']];
-  state.columns.forEach((col,ci)=>col.cards.forEach((card,oi)=>rows.push([card.id,state.title,col.name,ci+1,oi+1,card.title,card.body,card.notes||''])));
-  const csv='\\ufeff'+rows.map(r=>r.map(csvEscape).join(',')).join('\\r\\n');
+  state.columns.forEach((col,ci)=>col.cards.forEach((card,oi)=>rows.push([
+    card.id,state.title,col.name,ci+1,oi+1,card.title,card.body,card.notes||''
+  ])));
+  const csv='\ufeff'+rows.map(r=>r.map(csvEscape).join(';')).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.title||'story').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'story';a.download+='.csv';a.click();URL.revokeObjectURL(a.href)
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(state.title||'story').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'story';
+  a.download+='.csv';
+  a.click();
+  URL.revokeObjectURL(a.href)
 }
 function parseCSV(text){
   const rows=[];let row=[],cell='',q=false;
-  for(let i=0;i<text.length;i++){const ch=text[i],nx=text[i+1];
-    if(q){if(ch==='"'&&nx==='"'){cell+='"';i++}else if(ch==='"')q=false;else cell+=ch}
-    else{if(ch==='"')q=true;else if(ch===','){row.push(cell);cell=''}else if(ch==='\\n'){row.push(cell);rows.push(row);row=[];cell=''}else if(ch!=='\\r')cell+=ch}
+  // Detect the delimiter from the first non-empty line.
+  const firstLine=text.split(/\r?\n/).find(x=>x.trim())||'';
+  const delimiter=(firstLine.split(';').length>firstLine.split(',').length)?';':',';
+  for(let i=0;i<text.length;i++){
+    const ch=text[i],nx=text[i+1];
+    if(q){
+      if(ch==='"'&&nx==='"'){cell+='"';i++}
+      else if(ch==='"')q=false;
+      else cell+=ch
+    } else {
+      if(ch==='"')q=true;
+      else if(ch===delimiter){row.push(cell);cell=''}
+      else if(ch==='\n'){row.push(cell);rows.push(row);row=[];cell=''}
+      else if(ch!=='\r')cell+=ch
+    }
   }
-  if(cell!==''||row.length){row.push(cell);rows.push(row)} return rows
+  if(cell!==''||row.length){row.push(cell);rows.push(row)}
+  return rows
 }
 document.getElementById('csvInput').addEventListener('change',e=>{
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=()=>{
     try{
-      const rows=parseCSV(reader.result.replace(/^\\ufeff/,''));
+      const text=reader.result.replace(/^\uFEFF/,'');
+      const rows=parseCSV(text);
       if(!rows.length)throw new Error('Empty CSV');
-      const header=rows[0].map(x=>x.trim().toLowerCase());
-      const ix=n=>header.indexOf(n);
-      const storyIx=ix('story'), colIx=ix('column'), colOrderIx=ix('column order'), cardOrderIx=ix('card order');
-      const titleIx=ix('title'), bodyIx=ix('story / action'), notesIx=ix('notes'), idIx=ix('card id');
-      if(colIx<0||titleIx<0)throw new Error('Missing required columns: Column and Title');
-      const title=storyIx>=0&&rows[1]?.[storyIx]?rows[1][storyIx]:'Imported Story';
+
+      const header=rows[0].map(x=>String(x??'').replace(/^\uFEFF/,'').trim().toLowerCase());
+      const ixAny=(...names)=>{
+        for(const n of names){
+          const i=header.indexOf(n);
+          if(i>=0)return i;
+        }
+        return -1;
+      };
+
+      const storyIx=ixAny('story','história');
+      const seqIx=ixAny('sequence','column','sequência','coluna');
+      const titleIx=ixAny('title','título');
+      const bodyIx=ixAny('story / action','story/action','story action','história / ação','história/ação');
+      const notesIx=ixAny('notes','notas');
+      const idIx=ixAny('card id','id do cartão','id');
+
+      if(titleIx<0)throw new Error('Missing required column: Title');
+      if(seqIx<0)throw new Error('Missing required column: Sequence/Column');
+
+      const dataRows=rows.slice(1).filter(r=>r.some(x=>String(x??'').trim()!==''));
+      if(!dataRows.length)throw new Error('The CSV contains headers but no card rows.');
+
+      const title=(storyIx>=0&&dataRows[0]?.[storyIx])?dataRows[0][storyIx]:'Imported Story';
       const map=new Map();
-      rows.slice(1).filter(r=>r.some(x=>x!=='')).forEach(r=>{
-        const name=r[colIx]||'Untitled';
+
+      dataRows.forEach(r=>{
+        const name=String(r[seqIx]||'Untitled').trim()||'Untitled';
         if(!map.has(name))map.set(name,{id:uid(),name,cards:[]});
         map.get(name).cards.push({
           id:(idIx>=0&&r[idIx])||uid(),
           title:r[titleIx]||'',
-          body:bodyIx>=0?r[bodyIx]||'':'',
-          notes:notesIx>=0?r[notesIx]||'':''
-        })
+          body:bodyIx>=0?(r[bodyIx]||''):'',
+          notes:notesIx>=0?(r[notesIx]||''):''
+        });
       });
+
       state={title,columns:[...map.values()]};
-      if(!state.columns.length)state.columns=[{id:uid(),name:'Sequence 1',cards:[]}];
-      load();render();alert('CSV imported successfully.')
-    }catch(err){alert('Could not import CSV: '+err.message)}
-  };reader.readAsText(file);e.target.value=''
+      if(!state.columns.length)throw new Error('No sequences/cards could be imported.');
+
+      document.getElementById('storyTitle').value=state.title||'Untitled Story';
+      save();
+      render();
+      alert('CSV imported successfully: '+dataRows.length+' card(s) in '+state.columns.length+' sequence(s).');
+    }catch(err){
+      alert('Could not import CSV: '+err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value='';
 });
 document.getElementById('modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeModal()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();if(e.ctrlKey&&e.key==='Enter'&&document.getElementById('modalBackdrop').style.display==='flex')saveCard()});
